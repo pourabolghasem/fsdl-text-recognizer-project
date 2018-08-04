@@ -2,7 +2,7 @@ from boltons.cacheutils import cachedproperty
 import tensorflow as tf
 import tensorflow.keras.backend as K
 from tensorflow.python.client import device_lib
-from tensorflow.keras.layers import Conv2D, Dense, Dropout, Flatten, Input, MaxPooling2D, Permute, RepeatVector, Reshape, TimeDistributed, Lambda, LSTM, GRU, CuDNNLSTM, Bidirectional
+from tensorflow.keras.layers import Conv2D, Dense, Dropout, Flatten, Input, MaxPooling2D, Permute, RepeatVector, Reshape, TimeDistributed, Lambda, LSTM, GRU, CuDNNGRU, CuDNNLSTM, Bidirectional
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.models import Model as KerasModel
 
@@ -12,7 +12,7 @@ from text_recognizer.networks.misc import slide_window
 from text_recognizer.networks.ctc import ctc_decode
 
 
-def line_lstm_ctc(input_shape, output_shape, window_width=28, window_stride=14):
+def line_lstm_ctc(input_shape, output_shape, window_width=14, window_stride=7):
     image_height, image_width = input_shape
     output_length, num_classes = output_shape
 
@@ -26,7 +26,7 @@ def line_lstm_ctc(input_shape, output_shape, window_width=28, window_stride=14):
     label_length = Input(shape=(1,), name='label_length')
 
     gpu_present = len(device_lib.list_local_devices()) > 1
-    lstm_fn = CuDNNLSTM if gpu_present else LSTM
+    lstm_fn = CuDNNGRU if gpu_present else GRU
 
     # Your code should use slide_window and extract image patches from image_input.
     # Pass a convolutional model over each image patch to generate a feature vector per window.
@@ -50,10 +50,12 @@ def line_lstm_ctc(input_shape, output_shape, window_width=28, window_stride=14):
     convnet_outputs = TimeDistributed(convnet)(image_patches)
     # (num_windows, 128)
 
-    lstm_output = lstm_fn(256, return_sequences=True)(convnet_outputs)
+    x = Bidirectional(lstm_fn(256, return_sequences=True))(convnet_outputs)
     # (num_windows, 128)
-
-    softmax_output = Dense(num_classes, activation='softmax', name='softmax_output')(lstm_output)
+    
+    x = Dense(2*num_classes, activation='relu', name='relu_penultimate')(x)
+    x = Dropout(0.25)(x)
+    softmax_output = Dense(num_classes, activation='softmax', name='softmax_output')(x)
     # (num_windows, num_classes)
     ##### Your code above (Lab 3)
 
